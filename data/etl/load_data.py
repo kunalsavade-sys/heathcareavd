@@ -4,9 +4,6 @@ from pyspark.sql import SparkSession
 import datetime
 import json
 
-# ================================
-# REQUIRED FIX → Create Spark Session
-# ================================
 spark = SparkSession.builder \
     .appName("HealthcareETL") \
     .getOrCreate()
@@ -26,7 +23,7 @@ CONFIG_FILE_PATH = f"gs://{GCS_BUCKET}/configs/config.csv"
 BQ_PROJECT = "project-65b029a2-02f6-40de-986"
 BQ_AUDIT_TABLE = f"{BQ_PROJECT}.temp_dataset2.audit_log"
 BQ_LOG_TABLE = f"{BQ_PROJECT}.temp_dataset2.pipeline_logs"
-BQ_TEMP_PATH = f"{GCS_BUCKET}/temp/"
+BQ_TEMP_PATH = f"{GCS_BUCKET}/temp/"  
 
 # MySQL Configuration
 MYSQL_CONFIG = {
@@ -35,13 +32,15 @@ MYSQL_CONFIG = {
     "user": "akash-55",
     "password": "Kunal@55"
 }
-
 # Function to Read Config File from GCS
 def read_config_file():
     df = spark.read.csv(CONFIG_FILE_PATH, header=True)
     return df
 
 # Logging Mechanism
+
+#  https://chatgpt.com/share/69928f69-48e4-8009-a760-4438cfc21716
+
 log_entries = []
 
 def log_event(event_type, message, table=None):
@@ -55,13 +54,15 @@ def log_event(event_type, message, table=None):
 
 def save_logs_to_gcs():
     log_filename = f"pipeline_log_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}.json"
-    log_filepath = f"temp/pipeline_logs/{log_filename}"
-
+    log_filepath = f"temp/pipeline_logs/{log_filename}"  
+    
     json_data = json.dumps(log_entries, indent=4)
 
+    # Get GCS bucket
     bucket = storage_client.bucket(GCS_BUCKET)
     blob = bucket.blob(log_filepath)
-
+    
+    # Upload JSON data as a file
     blob.upload_from_string(json_data, content_type="application/json")
 
 def save_logs_to_bigquery():
@@ -86,6 +87,7 @@ def get_latest_watermark(table_name):
         return row.latest_timestamp if row.latest_timestamp else "1900-01-01 00:00:00"
     return "1900-01-01 00:00:00"
 
+
 # Function to Move Existing Files to Archive
 def move_existing_files_to_archive(table):
     blobs = list(storage_client.bucket(GCS_BUCKET).list_blobs(prefix=f"landing/{HOSPITAL_NAME}/{table}/"))
@@ -98,18 +100,21 @@ def move_existing_files_to_archive(table):
     for file in existing_files:
         source_blob = storage_client.bucket(GCS_BUCKET).blob(file)
 
+        # Extract Date from File Name
         date_part = file.split("_")[-1].split(".")[0]
         year, month, day = date_part[-4:], date_part[2:4], date_part[:2]
 
+        # Move to Archive
         archive_path = f"landing/{HOSPITAL_NAME}/archive/{table}/{year}/{month}/{day}/{file.split('/')[-1]}"
         destination_blob = storage_client.bucket(GCS_BUCKET).blob(archive_path)
 
+        # Copy file to archive and delete original
         storage_client.bucket(GCS_BUCKET).copy_blob(source_blob, storage_client.bucket(GCS_BUCKET), destination_blob.name)
         source_blob.delete()
 
         log_event("INFO", f"Moved {file} to {archive_path}", table=table)
 
-# Function to Extract Data from MySQL and Save to GCS
+# Function to Extract Data from MySQL and Save to GCS (MODIFIED)
 def extract_and_save_to_landing(table, load_type, watermark_col):
     try:
         last_watermark = get_latest_watermark(table) if load_type.lower() == "incremental" else None
@@ -117,7 +122,7 @@ def extract_and_save_to_landing(table, load_type, watermark_col):
 
         query = f"(SELECT * FROM {table}) AS t" if load_type.lower() == "full" else \
                 f"(SELECT * FROM {table} WHERE {watermark_col} > '{last_watermark}') AS t"
-
+        
         log_event("INFO", f"Executing query: {query}", table=table)
 
         df = (spark.read.format("jdbc")
@@ -128,6 +133,7 @@ def extract_and_save_to_landing(table, load_type, watermark_col):
                 .option("dbtable", query)
                 .load())
 
+        # Count records before proceeding
         record_count = df.count()
         log_event("SUCCESS", f"Successfully extracted {record_count} records from {table}", table=table)
 
@@ -138,19 +144,18 @@ def extract_and_save_to_landing(table, load_type, watermark_col):
 
             bucket = storage_client.bucket(GCS_BUCKET)
             blob = bucket.blob(JSON_FILE_PATH)
+            
+            blob.upload_from_string(df.toPandas().to_json(orient="records", lines=True), content_type="application/json")
 
-            blob.upload_from_string(
-                df.toPandas().to_json(orient="records", lines=True),
-                content_type="application/json"
-            )
-
-            log_event("SUCCESS", f"JSON file written to gs://{GCS_BUCKET}/{JSON_FILE_PATH}", table=table)
+            log_event("SUCCESS", f"JSON file successfully written to gs://{GCS_BUCKET}/{JSON_FILE_PATH} with {record_count} records.", table=table)
         else:
-            log_event("INFO", f"Skipping file creation for {table} as 0 new records were found.", table=table)
+            log_event("INFO", f"Skipping GCS file creation for {table} as 0 new records were found. Previous file preserved.", table=table)
+            
 
+        # Insert Audit Entry (Always update audit log with current run info)
         audit_df = spark.createDataFrame([
-            ("healthcare", table, load_type, record_count, datetime.datetime.now(), "SUCCESS")
-        ], ["data_source", "tablename", "load_type", "record_count", "load_timestamp", "status"])
+            ("healthcare", table, load_type, record_count, datetime.datetime.now(), "SUCCESS")], 
+            ["data_source", "tablename", "load_type", "record_count", "load_timestamp", "status"])
 
         (audit_df.write.format("bigquery")
             .option("table", BQ_AUDIT_TABLE)
@@ -161,11 +166,13 @@ def extract_and_save_to_landing(table, load_type, watermark_col):
         log_event("SUCCESS", f"Audit log updated for {table}", table=table)
 
     except Exception as e:
+        # If extraction fails, still log the error and an audit failure entry
         log_event("ERROR", f"Error processing {table}: {str(e)}", table=table)
-
+        
+        # Insert Audit Entry with failure status
         audit_df = spark.createDataFrame([
-            ("healthcare", table, load_type, 0, datetime.datetime.now(), "FAILURE")
-        ], ["data_source", "tablename", "load_type", "record_count", "load_timestamp", "status"])
+            ("healthcare", table, load_type, 0, datetime.datetime.now(), "FAILURE")], 
+            ["data_source", "tablename", "load_type", "record_count", "load_timestamp", "status"])
 
         (audit_df.write.format("bigquery")
             .option("table", BQ_AUDIT_TABLE)
@@ -173,14 +180,14 @@ def extract_and_save_to_landing(table, load_type, watermark_col):
             .mode("append")
             .save())
 
-# Main Execution
+
+# read config file
 config_df = read_config_file()
 
 for row in config_df.collect():
-    if row["is_active"] == '1' and row["database"] == "healthcare":
+    if row["is_active"] == '1' and row["database"] == "healthcare": 
         db_instance, database, table, load_type, watermark, is_active = row
         extract_and_save_to_landing(table, load_type, watermark)
 
 save_logs_to_gcs()
 save_logs_to_bigquery()
-
