@@ -1,25 +1,24 @@
-import airflow
 from airflow import DAG
-from datetime import timedelta
-from airflow.utils.dates import days_ago
-from airflow.operators.dagrun_operator import TriggerDagRunOperator
+from airflow.operators.trigger_dagrun import TriggerDagRunOperator
+from datetime import datetime, timedelta
 
-# Define default arguments
-ARGS = {
+# Default arguments
+default_args = {
     "owner": "airflow",
-    "start_date": days_ago(1),
+    "start_date": datetime(2024, 1, 1),  # Fixed start date
     "depends_on_past": False,
     "retries": 1,
-    "retry_delay": timedelta(minutes=5)
+    "retry_delay": timedelta(minutes=5),
 }
 
-# Define the parent DAG
+# Parent DAG
 with DAG(
     dag_id="parent_dag",
-    schedule_interval="0 5 * * *",
+    schedule_interval="0 5 * * *",  # Runs daily at 5 AM
     description="Parent DAG to trigger PySpark and BigQuery DAGs",
-    default_args=ARGS,
-    tags=["parent", "orchestration", "etl"]
+    default_args=default_args,
+    catchup=False,   # VERY IMPORTANT
+    tags=["parent", "orchestration", "etl"],
 ) as dag:
 
     trigger_pyspark_dag = TriggerDagRunOperator(
@@ -34,4 +33,4 @@ with DAG(
         wait_for_completion=True,
     )
 
-trigger_pyspark_dag >> trigger_bigquery_dag
+    trigger_pyspark_dag >> trigger_bigquery_dag
