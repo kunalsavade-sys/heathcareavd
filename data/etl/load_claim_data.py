@@ -7,7 +7,7 @@ spark = SparkSession.builder \
                     .getOrCreate()
 
 # configure variables
-BUCKET_NAME = "kunal-4"
+BUCKET_NAME = "kunal-1"
 CLAIMS_BUCKET_PATH = f"gs://{BUCKET_NAME}/landing/claims/*.csv"
 BQ_TABLE = "project-65b029a2-02f6-40de-986.bronze_dataset.claims"
 TEMP_GCS_BUCKET = f"{BUCKET_NAME}/temp/"
