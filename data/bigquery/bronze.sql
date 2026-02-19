@@ -13,7 +13,7 @@ OPTIONS (
 CREATE EXTERNAL TABLE IF NOT EXISTS project-65b029a2-02f6-40de-986.bronze_dataset.patients 
 OPTIONS (
   format = 'JSON',
-  uris = ['gs://kunal-2/landing/hospital/patients/*.json']
+  uris = ['gs://kunal-1/landing/hospital/patients/*.json']
 );
 
 CREATE EXTERNAL TABLE IF NOT EXISTS project-65b029a2-02f6-40de-986.bronze_dataset.providers 
