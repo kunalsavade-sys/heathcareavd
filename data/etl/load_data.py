@@ -20,15 +20,15 @@ CONFIG_FILE_PATH = f"gs://{GCS_BUCKET}/configs/config.csv"
 
 # BigQuery Configuration
 BQ_PROJECT = "project-65b029a2-02f6-40de-986"
-BQ_AUDIT_TABLE = f"{BQ_PROJECT}.temp_dataset2.audit_log"
-BQ_LOG_TABLE = f"{BQ_PROJECT}.temp_dataset2.pipeline_logs"
+BQ_AUDIT_TABLE = f"{BQ_PROJECT}.temp_dataset.audit_log"
+BQ_LOG_TABLE = f"{BQ_PROJECT}.temp_dataset.pipeline_logs"
 BQ_TEMP_PATH = f"{GCS_BUCKET}/temp/"  
 
 # MySQL Configuration
 MYSQL_CONFIG = {
-    "url": "jdbc:mysql://35.202.237.3/healthcare?useSSL=false&allowPublicKeyRetrieval=true",
+    "url": "jdbc:mysql://34.10.253.78/healthcare?useSSL=false&allowPublicKeyRetrieval=true",
     "driver": "com.mysql.cj.jdbc.Driver",
-    "user": "akash-55",
+    "user": "kunal-55",
     "password": "Kunal@55"
 }
 # Function to Read Config File from GCS
